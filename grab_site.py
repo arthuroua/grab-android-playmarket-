@@ -1,76 +1,66 @@
-import os, requests, zipfile
+import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from pathlib import Path
+import os
+import re
 
-# 🕒 Задайте timestamp архіву
-timestamp = "20240907100524"
-base_url = "http://android-playmarket.com/"
-wayback = f"https://web.archive.org/web/{timestamp}/"
-start_url = urljoin(wayback, base_url)
-
-downloaded = set()
+# Основна URL-адреса сторінки з Wayback Machine
+base_url = "https://web.archive.org/web/20240907100524/http://android-playmarket.com/"
 site_dir = Path("android-playmarket-site")
-site_dir.mkdir(parents=True, exist_ok=True)
+site_dir.mkdir(exist_ok=True)
 
-def save_file(url, content):
-    # Очистимо архівний префікс (web.archive.org/...)
-    if "web.archive.org" in url:
-        url = url.split("/http", 1)[-1]
-        url = "http" + url
+def clean_filename(url):
+    # Витягуємо оригінальний URL, якщо це Wayback Machine
+    match = re.search(r'/web/\d+(?:[a-z_]*)/(http.*)', url)
+    if match:
+        url = match.group(1)
 
     parsed = urlparse(url)
-    clean_path = (parsed.netloc + parsed.path).strip("/")
+    filepath = parsed.netloc + parsed.path
 
-    # Заміна символів, заборонених у Windows
-    for ch in ['<', '>', ':', '"', '\\', '|', '?', '*']:
-        clean_path = clean_path.replace(ch, "_")
-
-    path = site_dir / clean_path
-    if not Path(path).suffix:
-        path = path / "index.html"
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(content)
-
+    # Заборонені символи Windows
+    filepath = re.sub(r'[<>:"\\|?*]', "_", filepath)
+    if filepath.endswith("/"):
+        filepath += "index.html"
+    return site_dir / filepath
 
 def download(url):
-    if url in downloaded: return
-    downloaded.add(url)
     try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            save_file(url.replace(wayback, base_url), r.content)
+        print(f"⬇ Завантаження: {url}")
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        save_path = clean_filename(url)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(save_path, "wb") as f:
+            f.write(r.content)
     except Exception as e:
-        print(f"Не вдалося завантажити {url}: {e}")
+        print(f"❌ Не вдалося завантажити {url}: {e}")
 
 def rewrite_links(soup, tag, attr):
     for el in soup.find_all(tag):
-        link = el.get(attr)
-        if link and (link.startswith("/") or base_url in link):
-            full = urljoin(wayback, link)
+        if el.has_attr(attr):
+            original = el[attr]
+            full = urljoin(base_url, original)
+            el[attr] = clean_filename(full).relative_to(site_dir).as_posix()
             download(full)
-            new = link.replace(wayback, "").replace(base_url, "/")
-            el[attr] = new
 
-# Головна сторінка
-resp = requests.get(start_url)
-soup = BeautifulSoup(resp.content, "html.parser")
+# 1. Завантажити HTML-сторінку
+try:
+    print(f"🌐 Завантаження головної сторінки: {base_url}")
+    res = requests.get(base_url, timeout=20)
+    res.raise_for_status()
+    soup = BeautifulSoup(res.text, "html.parser")
 
-rewrite_links(soup, "link", "href")
-rewrite_links(soup, "script", "src")
-rewrite_links(soup, "img", "src")
-rewrite_links(soup, "a", "href")
+    # 2. Переписати посилання та завантажити ресурси
+    rewrite_links(soup, "link", "href")
+    rewrite_links(soup, "script", "src")
+    rewrite_links(soup, "img", "src")
 
-with open(site_dir / "index.html", "w", encoding="utf-8") as f:
-    f.write(str(soup))
-
-# ZIP-архів
-with zipfile.ZipFile("android-playmarket.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
-    for root, _, files in os.walk(site_dir):
-        for file in files:
-            path = Path(root) / file
-            zipf.write(path, path.relative_to(site_dir))
-
-print("🎉 Готово: android-playmarket.zip")
+    # 3. Зберегти HTML
+    index_path = site_dir / "index.html"
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(str(soup))
+    print(f"✅ Сайт збережено в: {index_path.resolve()}")
+except Exception as e:
+    print(f"❌ Помилка при завантаженні сайту: {e}")
