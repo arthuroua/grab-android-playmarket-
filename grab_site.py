@@ -14,12 +14,22 @@ site_dir = Path("android-playmarket-site")
 site_dir.mkdir(parents=True, exist_ok=True)
 
 def save_file(url, content):
+    # Очистимо архівний префікс (web.archive.org/...)
+    if "web.archive.org" in url:
+        url = url.split("/http", 1)[-1]
+        url = "http" + url
+
     parsed = urlparse(url)
-    clean_path = parsed.netloc + parsed.path
-    clean_path = clean_path.replace(":", "_")  # Windows-safe
-    path = site_dir / clean_path.strip("/")
-    if not path.suffix:
+    clean_path = (parsed.netloc + parsed.path).strip("/")
+
+    # Заміна символів, заборонених у Windows
+    for ch in ['<', '>', ':', '"', '\\', '|', '?', '*']:
+        clean_path = clean_path.replace(ch, "_")
+
+    path = site_dir / clean_path
+    if not Path(path).suffix:
         path = path / "index.html"
+
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
         f.write(content)
