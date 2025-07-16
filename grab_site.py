@@ -44,7 +44,7 @@ def download(url):
             filename.parent.mkdir(parents=True, exist_ok=True)
 
         if not filename.exists():
-            r = requests.get(url, timeout=10)
+            r = requests.get(url, timeout=30)
             with open(filename, "wb") as f:
                 f.write(r.content)
             print(f"✅ Завантажено: {url}")
