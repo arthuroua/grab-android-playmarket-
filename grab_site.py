@@ -15,12 +15,15 @@ site_dir.mkdir(parents=True, exist_ok=True)
 
 def save_file(url, content):
     parsed = urlparse(url)
-    path = site_dir / parsed.path.strip("/")
+    clean_path = parsed.netloc + parsed.path
+    clean_path = clean_path.replace(":", "_")  # Windows-safe
+    path = site_dir / clean_path.strip("/")
     if not path.suffix:
         path = path / "index.html"
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
         f.write(content)
+
 
 def download(url):
     if url in downloaded: return
