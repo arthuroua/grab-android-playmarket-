@@ -11,19 +11,24 @@ site_dir = Path("android-playmarket-site")
 site_dir.mkdir(exist_ok=True)
 
 def clean_filename(url):
-    # Витягуємо оригінальний URL, якщо це Wayback Machine
-    match = re.search(r'/web/\d+(?:[a-z_]*)/(http.*)', url)
-    if match:
-        url = match.group(1)
+    # Обробка Wayback URL — залишаємо тільки оригінальну частину
+    m = re.match(r"https?://web\.archive\.org/web/\d+[a-z_]*?/(https?://.+)", url)
+    if m:
+        url = m.group(1)
 
     parsed = urlparse(url)
     filepath = parsed.netloc + parsed.path
 
-    # Заборонені символи Windows
-    filepath = re.sub(r'[<>:"\\|?*]', "_", filepath)
-    if filepath.endswith("/"):
+    # Замінюємо небезпечні символи
+    filepath = re.sub(r"[<>:\"/\\|?*]", "_", filepath)
+
+    if filepath.endswith("_"):  # Якщо залишився підкреслення після слеша
         filepath += "index.html"
+    elif not os.path.splitext(filepath)[1]:
+        filepath += ".html"
+
     return site_dir / filepath
+
 
 def download(url):
     try:
